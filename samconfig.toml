@@ -1,29 +1,22 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "ogz-api"
-region     = "ap-northeast-1"
+stack_name    = "whiplash-gunz-api"
+region        = "ap-northeast-1"
+capabilities  = "CAPABILITY_IAM"
 confirm_changeset = true
-capabilities = "CAPABILITY_IAM"
+resolve_s3    = true
 
 [default.build.parameters]
-cached = true
+cached   = true
 parallel = true
 
-[default.deploy.parameters]
-# Change the values below to match your actual environment.
-# Do not write secrets directly here — use environment variables or AWS Secrets Manager.
-
-# MatchServerHost and MatchServerSecret can be passed via --parameter-overrides
-# during sam deploy, or written directly in [default.deploy.parameters] of this file.
+# Pass secrets via --parameter-overrides at deploy time.
+# Do not commit actual secret values here.
 # Example:
-# parameter_overrides = [
-#   "MatchServerHost=your-server-ip",
-#   "MatchServerPort=6034",
-#   "MatchServerSecret=your-secret-token",
-#   "DiscordPublicKey=your-discord-public-key-hex",
-#   "StageName=prod"
-# ]
-
-[default.sync.parameters]
-watch = true
+#   sam deploy --parameter-overrides \
+#     MatchServerHost=<IP> \
+#     AdminServerSecret=<SECRET> \
+#     DiscordPublicKey=<HEX> \
+#     RegistrationSecret=<REG_SECRET> \
+#     GoogleClientId=<CLIENT_ID>

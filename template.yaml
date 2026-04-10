@@ -1,88 +1,179 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: OGZ MatchServer API Lambda — Discord interactions and admin API
+Description: >
+  Whiplash GunZ API — Discord interactions, account registration, and MatchServer admin bridge
 
-# ---------------------------------------------------------------------------
-# Global settings
-# ---------------------------------------------------------------------------
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs22.x
     Timeout: 15
     MemorySize: 256
-    Environment:
-      Variables:
-        MATCHSERVER_HOST:      !Ref MatchServerHost
-        MATCHSERVER_PORT:      !Ref MatchServerPort
-        MATCHSERVER_SECRET:    !Ref MatchServerSecret
-        MATCHSERVER_USE_HTTPS: !Ref MatchServerUseHttps
-        DISCORD_PUBLIC_KEY:    !Ref DiscordPublicKey
+    Architectures: [arm64]
 
-# ---------------------------------------------------------------------------
-# Parameters (pass via sam deploy --parameter-overrides or write in samconfig.toml)
-# ---------------------------------------------------------------------------
 Parameters:
+  # --- Shared ---
   MatchServerHost:
     Type: String
-    Description: MatchServer hostname or IP
-  MatchServerPort:
-    Type: Number
-    Default: 6034
-    Description: MatchServer Admin HTTP port
-  MatchServerSecret:
-    Type: String
-    NoEcho: true
-    Description: Bearer token for MatchServer Admin API
-  MatchServerUseHttps:
-    Type: String
-    Default: 'false'
-    AllowedValues: ['true', 'false']
-  DiscordPublicKey:
-    Type: String
-    Description: Discord Application Public Key (hex)
+    Description: MatchServer hostname or IP address
+
   StageName:
     Type: String
     Default: prod
     Description: API Gateway stage name
 
-# ---------------------------------------------------------------------------
-# Resource definitions
-# ---------------------------------------------------------------------------
+  # --- Discord Lambda ---
+  DiscordPublicKey:
+    Type: String
+    Description: Discord Application Public Key (hex string from Discord Developer Portal)
+
+  AdminServerPort:
+    Type: Number
+    Default: 6034
+    Description: MatchServer Admin HTTP port (used by Discord bounty handler)
+
+  AdminServerSecret:
+    Type: String
+    NoEcho: true
+    Description: Bearer token for MatchServer Admin HTTP API
+
+  AdminServerUseHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set to 'true' if MatchServer Admin API uses HTTPS
+
+  # --- Register Lambdas ---
+  GameServerPort:
+    Type: String
+    Default: '6000'
+    Description: MatchServer game TCP port (used by registration handlers)
+
+  RegistrationSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Secret token sent with account creation requests to MatchServer
+
+  GoogleClientId:
+    Type: String
+    Default: ''
+    Description: >
+      Google OAuth 2.0 client ID (from Google Cloud Console).
+      Required by the POST /register/google endpoint.
+
 Resources:
 
-  # --- Lambda function ---
-  OgzApiFunction:
+  # ---------------------------------------------------------------------------
+  # Shared HTTP API Gateway
+  # ---------------------------------------------------------------------------
+  WhiplashHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      Description: Whiplash GunZ API Gateway
+
+  # ---------------------------------------------------------------------------
+  # Discord Interactions Lambda
+  # Handles Discord slash commands and forwards bounty claims to MatchServer
+  # ---------------------------------------------------------------------------
+  DiscordFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub 'ogz-api-${StageName}'
-      Description: Handles Discord interactions and forwards to OGZ MatchServer
+      FunctionName: !Sub 'whiplash-gunz-discord-${StageName}'
+      Description: Handles Discord interactions and forwards to MatchServer Admin API
       CodeUri: src/
       Handler: index.handler
+      Environment:
+        Variables:
+          DISCORD_PUBLIC_KEY:    !Ref DiscordPublicKey
+          MATCHSERVER_HOST:      !Ref MatchServerHost
+          MATCHSERVER_PORT:      !Ref AdminServerPort
+          MATCHSERVER_SECRET:    !Ref AdminServerSecret
+          MATCHSERVER_USE_HTTPS: !Ref AdminServerUseHttps
       Events:
         DiscordWebhook:
           Type: HttpApi
           Properties:
-            ApiId: !Ref OgzHttpApi
+            ApiId: !Ref WhiplashHttpApi
             Path: /discord/interactions
             Method: POST
 
-  # --- API Gateway HTTP API ---
-  OgzHttpApi:
-    Type: AWS::Serverless::HttpApi
+  # ---------------------------------------------------------------------------
+  # Account Registration Lambda — POST /register
+  # ---------------------------------------------------------------------------
+  RegisterFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      StageName: !Ref StageName
-      Description: OGZ API Gateway
-      # CORS is not needed (Discord webhooks are server-to-server)
+      FunctionName: !Sub 'whiplash-gunz-register-${StageName}'
+      Description: Creates a new GunZ account via MatchServer TCP protocol
+      CodeUri: src/register/
+      Handler: index.handler
+      Environment:
+        Variables:
+          MATCHSERVER_HOST:    !Ref MatchServerHost
+          MATCHSERVER_PORT:    !Ref GameServerPort
+          REGISTRATION_SECRET: !Ref RegistrationSecret
+      Events:
+        RegisterApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WhiplashHttpApi
+            Path: /register
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - index.ts
+        External:
+          - "@aws-sdk/*"
 
-# ---------------------------------------------------------------------------
-# Outputs
-# ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Google OAuth Registration Lambda — POST /register/google
+  # ---------------------------------------------------------------------------
+  RegisterGoogleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'whiplash-gunz-register-google-${StageName}'
+      Description: Handles Google OAuth login/registration via MatchServer TCP protocol
+      CodeUri: src/register/
+      Handler: google-register.handler
+      Environment:
+        Variables:
+          MATCHSERVER_HOST:    !Ref MatchServerHost
+          MATCHSERVER_PORT:    !Ref GameServerPort
+          REGISTRATION_SECRET: !Ref RegistrationSecret
+          GOOGLE_CLIENT_ID:    !Ref GoogleClientId
+      Events:
+        RegisterGoogleApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WhiplashHttpApi
+            Path: /register/google
+            Method: POST
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        EntryPoints:
+          - google-register.ts
+        External:
+          - "@aws-sdk/*"
+
 Outputs:
   DiscordInteractionsUrl:
-    Description: >
-      URL to set as the "Interactions Endpoint URL" in the Discord Developer Portal
-    Value: !Sub 'https://${OgzHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/discord/interactions'
+    Description: Set this URL as the Interactions Endpoint URL in the Discord Developer Portal
+    Value: !Sub 'https://${WhiplashHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/discord/interactions'
 
-  OgzApiFunctionArn:
-    Description: Lambda Function ARN
-    Value: !GetAtt OgzApiFunction.Arn
+  RegisterUrl:
+    Description: POST /register endpoint for account creation
+    Value: !Sub 'https://${WhiplashHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/register'
+
+  RegisterGoogleUrl:
+    Description: POST /register/google endpoint for Google OAuth login/registration
+    Value: !Sub 'https://${WhiplashHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/register/google'

@@ -1,0 +1,16 @@
+{
+  "name": "whiplash-gunz-api-register",
+  "version": "1.0.0",
+  "dependencies": {
+    "google-auth-library": "^10.6.2",
+    "libsodium-wrappers": "^0.7.15",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.149",
+    "@types/libsodium-wrappers": "^0.7.14",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.2"
+  }
+}
