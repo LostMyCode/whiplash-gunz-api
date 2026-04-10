@@ -1,13 +1,13 @@
 # OGZ API Lambda
 
-Discord interactions と OGZ MatchServer Admin HTTP API の橋渡し Lambda。
+Lambda bridging Discord interactions and the OGZ MatchServer Admin HTTP API.
 
-## 必要環境
+## Requirements
 
 - AWS SAM CLI
 - Node.js 20+
 
-## デプロイ
+## Deploy
 
 ```bash
 cd lambda
@@ -19,18 +19,18 @@ sam deploy \
     DiscordPublicKey=<HEX_KEY>
 ```
 
-## 新しいコマンドの追加
+## Adding a New Command
 
-1. `src/handlers/<commandName>.js` を作成して `handle<CommandName>(interaction)` をエクスポート
-2. `src/handlers/index.js` の `COMMAND_HANDLERS` に `'command-name': handler` を追加
-3. Discord Developer Portal で Slash Command を登録
+1. Create `src/handlers/<commandName>.js` and export `handle<CommandName>(interaction)`
+2. Add `'command-name': handler` to `COMMAND_HANDLERS` in `src/handlers/index.js`
+3. Register the Slash Command in the Discord Developer Portal
 
-## 環境変数
+## Environment Variables
 
-| 変数名 | 必須 | 説明 |
+| Variable | Required | Description |
 |---|---|---|
 | `DISCORD_PUBLIC_KEY` | yes | Discord Application Public Key (hex) |
-| `MATCHSERVER_HOST` | yes | MatchServer の IP / ホスト名 |
-| `MATCHSERVER_PORT` | | Admin HTTP ポート (デフォルト: 6034) |
-| `MATCHSERVER_SECRET` | yes | MatchServer Bearer トークン |
-| `MATCHSERVER_USE_HTTPS` | | `true` にすると HTTPS 使用 (デフォルト: false) |
+| `MATCHSERVER_HOST` | yes | MatchServer IP / hostname |
+| `MATCHSERVER_PORT` | | Admin HTTP port (default: 6034) |
+| `MATCHSERVER_SECRET` | yes | MatchServer Bearer token |
+| `MATCHSERVER_USE_HTTPS` | | Set to `true` to use HTTPS (default: false) |

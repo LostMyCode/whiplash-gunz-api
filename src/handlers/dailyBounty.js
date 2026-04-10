@@ -4,10 +4,10 @@ const { callMatchServer } = require('../matchserver/client');
 const { reply, error }    = require('../discord/respond');
 
 /**
- * /claim <code> コマンドを処理する
+ * Handles the /claim <code> command.
  *
- * @param {object} interaction - Discord Interaction オブジェクト
- * @returns {Promise<object>} - API Gateway レスポンス
+ * @param {object} interaction - Discord Interaction object
+ * @returns {Promise<object>} - API Gateway response
  */
 async function handleClaim(interaction) {
     const options = interaction.data?.options ?? [];
@@ -15,7 +15,7 @@ async function handleClaim(interaction) {
     const code    = codeOpt?.value?.trim().toUpperCase() ?? '';
 
     if (!code || !/^OGZ-[0-9A-F]{6}$/.test(code)) {
-        return error('コードの形式が正しくありません。例: `OGZ-A1B2C3`');
+        return error('Code has an invalid format. Example: `OGZ-A1B2C3`');
     }
 
     const discordUserId = interaction.member?.user?.id ?? interaction.user?.id ?? '';
@@ -28,20 +28,20 @@ async function handleClaim(interaction) {
         });
     } catch (err) {
         console.error('[dailyBounty] MatchServer error:', err.message);
-        return error('サーバーへの接続に失敗しました。しばらくお待ちください。');
+        return error('Failed to connect to the server. Please try again later.');
     }
 
     if (result.data?.ok) {
-        const charName  = result.data.char_name  ?? '不明';
+        const charName  = result.data.char_name  ?? 'unknown';
         const bpGranted = result.data.bp_granted ?? 0;
-        return reply(`✅ **${charName}** に **${bpGranted} BP** が付与されました！`);
+        return reply(`✅ **${bpGranted} BP** has been granted to **${charName}**!`);
     }
 
     const reasons = {
         'code invalid, expired, or already claimed':
-            'コードが無効・期限切れ、またはすでに使用済みです。',
+            'Code is invalid, expired, or already used.',
     };
-    const reason = reasons[result.data?.reason] ?? result.data?.reason ?? 'エラーが発生しました。';
+    const reason = reasons[result.data?.reason] ?? result.data?.reason ?? 'An error occurred.';
     return error(reason);
 }
 

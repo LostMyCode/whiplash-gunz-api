@@ -3,17 +3,17 @@
 const { handleClaim } = require('./dailyBounty');
 
 /**
- * Discord Application Command 名 → ハンドラー関数のマップ
+ * Map of Discord Application Command names → handler functions.
  *
- * 新しいコマンドを追加する場合:
- *   1. handlers/<name>.js を作成して handler 関数をエクスポート
- *   2. ここに { 'command-name': handlerFn } を追加するだけ
+ * To add a new command:
+ *   1. Create handlers/<name>.js and export a handler function
+ *   2. Add { 'command-name': handlerFn } here
  *
  * @type {Record<string, (interaction: object) => Promise<object>>}
  */
 const COMMAND_HANDLERS = {
     'claim': handleClaim,
-    // 'register': handleRegister,  // 将来追加する例
+    // 'register': handleRegister,  // example of a future addition
 };
 
 module.exports = { COMMAND_HANDLERS };

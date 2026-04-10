@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: OGZ MatchServer API Lambda — Discord interactions and admin API
 
 # ---------------------------------------------------------------------------
-# グローバル設定
+# Global settings
 # ---------------------------------------------------------------------------
 Globals:
   Function:
@@ -19,7 +19,7 @@ Globals:
         DISCORD_PUBLIC_KEY:    !Ref DiscordPublicKey
 
 # ---------------------------------------------------------------------------
-# パラメーター (sam deploy --parameter-overrides で渡す / samconfig.toml に書く)
+# Parameters (pass via sam deploy --parameter-overrides or write in samconfig.toml)
 # ---------------------------------------------------------------------------
 Parameters:
   MatchServerHost:
@@ -46,11 +46,11 @@ Parameters:
     Description: API Gateway stage name
 
 # ---------------------------------------------------------------------------
-# リソース定義
+# Resource definitions
 # ---------------------------------------------------------------------------
 Resources:
 
-  # --- Lambda 関数 ---
+  # --- Lambda function ---
   OgzApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -72,15 +72,15 @@ Resources:
     Properties:
       StageName: !Ref StageName
       Description: OGZ API Gateway
-      # CORS は不要（Discord webhooks はサーバー間通信）
+      # CORS is not needed (Discord webhooks are server-to-server)
 
 # ---------------------------------------------------------------------------
-# 出力
+# Outputs
 # ---------------------------------------------------------------------------
 Outputs:
   DiscordInteractionsUrl:
     Description: >
-      Discord Developer Portal の "Interactions Endpoint URL" に設定するURL
+      URL to set as the "Interactions Endpoint URL" in the Discord Developer Portal
     Value: !Sub 'https://${OgzHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/discord/interactions'
 
   OgzApiFunctionArn:

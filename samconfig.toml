@@ -11,13 +11,12 @@ cached = true
 parallel = true
 
 [default.deploy.parameters]
-# 以下の値は実際の環境に合わせて変更すること
-# 機密情報は直接書かず、環境変数や AWS Secrets Manager を使うこと
+# Change the values below to match your actual environment.
+# Do not write secrets directly here — use environment variables or AWS Secrets Manager.
 
-# MatchServerHost と MatchServerSecret は
-# sam deploy 時に --parameter-overrides で渡すか、
-# このファイルの [default.deploy.parameters] に書く
-# 例:
+# MatchServerHost and MatchServerSecret can be passed via --parameter-overrides
+# during sam deploy, or written directly in [default.deploy.parameters] of this file.
+# Example:
 # parameter_overrides = [
 #   "MatchServerHost=your-server-ip",
 #   "MatchServerPort=6034",

@@ -1,5 +1,5 @@
 {
-  "name": "ogz-api-lambda",
+  "name": "whiplash-gunz-api",
   "version": "1.0.0",
   "description": "OGZ MatchServer API Lambda — handles Discord interactions and admin API calls",
   "main": "index.js",

@@ -9,11 +9,11 @@ const MATCHSERVER_SECRET    = process.env.MATCHSERVER_SECRET;
 const MATCHSERVER_USE_HTTPS = process.env.MATCHSERVER_USE_HTTPS === 'true';
 
 /**
- * MatchServer Admin HTTP API を呼び出す汎用関数
+ * Generic function to call the MatchServer Admin HTTP API.
  *
  * @param {string} method  - "GET" | "POST"
  * @param {string} path    - "/api/bounty/claim"
- * @param {object|null} body - JSON シリアライズ可能なオブジェクト
+ * @param {object|null} body - JSON-serializable object
  * @returns {Promise<{statusCode: number, data: object}>}
  */
 function callMatchServer(method, path, body = null) {

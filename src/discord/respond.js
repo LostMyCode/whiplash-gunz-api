@@ -8,7 +8,7 @@ const InteractionResponseType = {
 };
 
 /**
- * Discord Ping レスポンス
+ * Discord Ping response
  */
 function pong() {
     return {
@@ -19,7 +19,7 @@ function pong() {
 }
 
 /**
- * テキストメッセージで返答する
+ * Reply with a text message.
  * @param {string} content
  * @param {object} options - { ephemeral: bool }
  */
@@ -38,7 +38,7 @@ function reply(content, options = {}) {
 }
 
 /**
- * エラーレスポンス（ユーザー向け）
+ * Error response (user-facing)
  */
 function error(message) {
     return reply(`❌ ${message}`, { ephemeral: true });
