@@ -1,0 +1,30 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "ogz-api"
+region     = "ap-northeast-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+# 以下の値は実際の環境に合わせて変更すること
+# 機密情報は直接書かず、環境変数や AWS Secrets Manager を使うこと
+
+# MatchServerHost と MatchServerSecret は
+# sam deploy 時に --parameter-overrides で渡すか、
+# このファイルの [default.deploy.parameters] に書く
+# 例:
+# parameter_overrides = [
+#   "MatchServerHost=your-server-ip",
+#   "MatchServerPort=6034",
+#   "MatchServerSecret=your-secret-token",
+#   "DiscordPublicKey=your-discord-public-key-hex",
+#   "StageName=prod"
+# ]
+
+[default.sync.parameters]
+watch = true

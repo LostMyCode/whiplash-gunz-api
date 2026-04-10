@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: OGZ MatchServer API Lambda — Discord interactions and admin API
+
+# ---------------------------------------------------------------------------
+# グローバル設定
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 15
+    MemorySize: 256
+    Environment:
+      Variables:
+        MATCHSERVER_HOST:      !Ref MatchServerHost
+        MATCHSERVER_PORT:      !Ref MatchServerPort
+        MATCHSERVER_SECRET:    !Ref MatchServerSecret
+        MATCHSERVER_USE_HTTPS: !Ref MatchServerUseHttps
+        DISCORD_PUBLIC_KEY:    !Ref DiscordPublicKey
+
+# ---------------------------------------------------------------------------
+# パラメーター (sam deploy --parameter-overrides で渡す / samconfig.toml に書く)
+# ---------------------------------------------------------------------------
+Parameters:
+  MatchServerHost:
+    Type: String
+    Description: MatchServer hostname or IP
+  MatchServerPort:
+    Type: Number
+    Default: 6034
+    Description: MatchServer Admin HTTP port
+  MatchServerSecret:
+    Type: String
+    NoEcho: true
+    Description: Bearer token for MatchServer Admin API
+  MatchServerUseHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+  DiscordPublicKey:
+    Type: String
+    Description: Discord Application Public Key (hex)
+  StageName:
+    Type: String
+    Default: prod
+    Description: API Gateway stage name
+
+# ---------------------------------------------------------------------------
+# リソース定義
+# ---------------------------------------------------------------------------
+Resources:
+
+  # --- Lambda 関数 ---
+  OgzApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ogz-api-${StageName}'
+      Description: Handles Discord interactions and forwards to OGZ MatchServer
+      CodeUri: src/
+      Handler: index.handler
+      Events:
+        DiscordWebhook:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref OgzHttpApi
+            Path: /discord/interactions
+            Method: POST
+
+  # --- API Gateway HTTP API ---
+  OgzHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      Description: OGZ API Gateway
+      # CORS は不要（Discord webhooks はサーバー間通信）
+
+# ---------------------------------------------------------------------------
+# 出力
+# ---------------------------------------------------------------------------
+Outputs:
+  DiscordInteractionsUrl:
+    Description: >
+      Discord Developer Portal の "Interactions Endpoint URL" に設定するURL
+    Value: !Sub 'https://${OgzHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/discord/interactions'
+
+  OgzApiFunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt OgzApiFunction.Arn
