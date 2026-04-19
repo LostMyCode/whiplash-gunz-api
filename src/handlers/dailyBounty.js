@@ -14,8 +14,8 @@ async function handleClaim(interaction) {
     const codeOpt = options.find(o => o.name === 'code');
     const code    = codeOpt?.value?.trim().toUpperCase() ?? '';
 
-    if (!code || !/^OGZ-[0-9A-F]{6}$/.test(code)) {
-        return error('Code has an invalid format. Example: `OGZ-A1B2C3`');
+    if (!code || !/^WHIP-[0-9A-F]{12}$/.test(code)) {
+        return error('Code has an invalid format. Example: `WHIP-A1B2C3D4E5F6`');
     }
 
     const discordUserId = interaction.member?.user?.id ?? interaction.user?.id ?? '';
