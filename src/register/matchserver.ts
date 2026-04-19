@@ -44,7 +44,7 @@
  */
 
 import WebSocket from 'ws';
-import sodium from 'libsodium-wrappers';
+import sodium = require('libsodium-wrappers');
 
 // ---------------------------------------------------------------------------
 // WebSocket transport helpers

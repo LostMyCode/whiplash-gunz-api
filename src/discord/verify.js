@@ -1,9 +1,8 @@
 'use strict';
 
-const { verify } = require('@noble/ed25519');
-// @noble/ed25519 v2 uses async verify by default.
-// The Lambda handler is async, so we call it with await.
-// To use synchronous verifySync, sha512Sync setup is required separately.
+const crypto = require('crypto');
+
+const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
 /**
  * Verifies the signature of a Discord Interaction request.
@@ -15,10 +14,21 @@ const { verify } = require('@noble/ed25519');
  */
 async function verifyDiscordSignature(rawBody, signature, timestamp, publicKey) {
     try {
-        const message  = Buffer.from(timestamp + rawBody);
+        if (!signature || !timestamp || !publicKey) return false;
+
+        const message = Buffer.from(timestamp + rawBody);
         const sigBytes = Buffer.from(signature, 'hex');
         const keyBytes = Buffer.from(publicKey, 'hex');
-        return await verify(sigBytes, message, keyBytes);
+
+        if (sigBytes.length !== 64 || keyBytes.length !== 32) return false;
+
+        const keyObject = crypto.createPublicKey({
+            key: Buffer.concat([ED25519_SPKI_PREFIX, keyBytes]),
+            format: 'der',
+            type: 'spki',
+        });
+
+        return crypto.verify(null, message, keyObject, sigBytes);
     } catch {
         return false;
     }
