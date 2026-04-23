@@ -25,6 +25,7 @@ sam deploy \
     AdminServerSecret=<ADMIN_SECRET> \
     DiscordPublicKey=<HEX_KEY> \
     RegistrationSecret=<REG_SECRET> \
+    TurnstileSecretKey=<TURNSTILE_SECRET> \
     GoogleClientId=<GOOGLE_CLIENT_ID>
 ```
 
@@ -35,6 +36,8 @@ sam deploy \
 3. Register the slash command in the Discord Developer Portal
 
 ## Environment Variables
+
+`POST /register` expects `username`, `password`, `email`, and `turnstileToken` in the JSON body.
 
 ### Discord Lambda (`DiscordFunction`)
 
@@ -53,4 +56,5 @@ sam deploy \
 | `MATCHSERVER_HOST` | yes | MatchServer IP / hostname |
 | `MATCHSERVER_PORT` | | Game TCP port (default: 6000) |
 | `REGISTRATION_SECRET` | | Secret token sent with account creation |
+| `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key for `/register` CAPTCHA verification |
 | `GOOGLE_CLIENT_ID` | yes (Google only) | Google OAuth 2.0 client ID |

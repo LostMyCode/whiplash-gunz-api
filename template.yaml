@@ -54,6 +54,12 @@ Parameters:
     Default: ''
     Description: Secret token sent with account creation requests to MatchServer
 
+  TurnstileSecretKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Cloudflare Turnstile secret key for /register CAPTCHA verification
+
   GoogleClientId:
     Type: String
     Default: ''
@@ -71,6 +77,17 @@ Resources:
     Properties:
       StageName: !Ref StageName
       Description: Whiplash GunZ API Gateway
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Signature-Ed25519
+          - X-Signature-Timestamp
 
   # ---------------------------------------------------------------------------
   # Discord Interactions Lambda
@@ -113,6 +130,7 @@ Resources:
           MATCHSERVER_HOST:    !Ref MatchServerHost
           MATCHSERVER_PORT:    !Ref GameServerPort
           REGISTRATION_SECRET: !Ref RegistrationSecret
+          TURNSTILE_SECRET_KEY: !Ref TurnstileSecretKey
       Events:
         RegisterApi:
           Type: HttpApi

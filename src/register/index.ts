@@ -7,6 +7,7 @@
  * Environment variables:
  *   MATCHSERVER_HOST  — MatchServer IP or hostname (required)
  *   MATCHSERVER_PORT  — MatchServer TCP port        (default: 6000)
+ *   TURNSTILE_SECRET_KEY — Cloudflare Turnstile secret key (required)
  */
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
@@ -44,6 +45,32 @@ function validateEmail(email: unknown): string | null {
     if (typeof email !== 'string') return 'Email must be a string';
     if (!EMAIL_RE.test(email))     return 'Invalid email address';
     return null;
+}
+
+async function verifyTurnstile(turnstileToken: string): Promise<boolean> {
+    const secret = process.env.TURNSTILE_SECRET_KEY;
+    if (!secret) {
+        throw new Error('TURNSTILE_SECRET_KEY is not set');
+    }
+
+    const form = new URLSearchParams();
+    form.set('secret', secret);
+    form.set('response', turnstileToken);
+
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: form.toString(),
+    });
+
+    if (!res.ok) {
+        return false;
+    }
+
+    const data = await res.json() as { success?: boolean };
+    return data.success === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +116,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         return response(400, { success: false, message: 'Invalid JSON body' });
     }
 
-    const { username, password, email } = body;
+    const { username, password, email, turnstileToken } = body;
 
     // Validate inputs
     const usernameError = validateUsername(username);
@@ -100,6 +127,29 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const emailError = validateEmail(email);
     if (emailError) return response(400, { success: false, message: emailError });
+
+    if (typeof turnstileToken !== 'string' || turnstileToken.trim() === '') {
+        return response(400, {
+            success: false,
+            message: 'CAPTCHA verification failed. Please try again.',
+        });
+    }
+
+    try {
+        const verified = await verifyTurnstile(turnstileToken);
+        if (!verified) {
+            return response(400, {
+                success: false,
+                message: 'CAPTCHA verification failed. Please try again.',
+            });
+        }
+    } catch (err) {
+        console.error('Turnstile verification error:', err);
+        return response(500, {
+            success: false,
+            message: 'Server configuration error.',
+        });
+    }
 
     // Read MatchServer connection config from environment
     const host = process.env.MATCHSERVER_HOST;
