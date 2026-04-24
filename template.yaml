@@ -94,6 +94,7 @@ Resources:
     Properties:
       TableName: whiplash-gunz-accounts
       BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
       AttributeDefinitions:
         - AttributeName: accountKey
           AttributeType: S
