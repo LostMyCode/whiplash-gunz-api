@@ -17,16 +17,16 @@ import { createAccount } from './matchserver';
 // Validation helpers
 // ---------------------------------------------------------------------------
 
-const USERNAME_RE = /^[a-zA-Z0-9]{4,}$/;
+const USERNAME_RE = /^[a-zA-Z0-9-]{4,16}$/;
 const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_RE = /^[\x21-\x7E]{8,}$/;
 
 /**
- * Validate username: 5+ alphanumeric characters.
+ * Validate username: 4-16 half-width letters, numbers, or hyphens.
  */
 function validateUsername(username: unknown): string | null {
     if (typeof username !== 'string') return 'Username must be a string';
-    if (!USERNAME_RE.test(username))  return 'Username must be at least 4 alphanumeric characters';
+    if (!USERNAME_RE.test(username))  return 'Username must be 4-16 half-width letters, numbers, or hyphens';
     return null;
 }
 
