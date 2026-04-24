@@ -19,7 +19,7 @@ import { createAccount } from './matchserver';
 
 const USERNAME_RE = /^[a-zA-Z0-9-]{4,16}$/;
 const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_RE = /^[\x21-\x7E]{8,}$/;
+const PASSWORD_RE = /^[\x21-\x7E]{8,64}$/;
 
 /**
  * Validate username: 4-16 half-width letters, numbers, or hyphens.
@@ -31,11 +31,12 @@ function validateUsername(username: unknown): string | null {
 }
 
 /**
- * Validate password: 8+ printable ASCII characters.
+ * Validate password: 8-64 printable ASCII characters.
  */
 function validatePassword(password: unknown): string | null {
     if (typeof password !== 'string') return 'Password must be a string';
     if (password.length < 8)          return 'Password must be at least 8 characters';
+    if (password.length > 64)         return 'Password must be 64 characters or fewer';
     if (!PASSWORD_RE.test(password))  return 'Password must use half-width letters, numbers, or symbols only';
     return null;
 }
