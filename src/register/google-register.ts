@@ -89,11 +89,6 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const { idToken } = body;
 
-    // DEBUG: log what idToken was received in the Lambda event body
-    console.log('[google-register handler] typeof idToken:', typeof idToken);
-    console.log('[google-register handler] idToken length:', typeof idToken === 'string' ? (idToken as string).length : 'N/A');
-    console.log('[google-register handler] idToken (first 80 chars):', typeof idToken === 'string' ? (idToken as string).substring(0, 80) : idToken);
-
     if (typeof idToken !== 'string' || idToken.trim() === '') {
         return response(400, { success: false, message: 'idToken must be a non-empty string' });
     }
@@ -135,9 +130,6 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
             message: 'Server configuration error.',
         });
     }
-
-    // DEBUG: log what is being passed to loginWithGoogle
-    console.log('[google-register handler] passing idToken to loginWithGoogle, length:', idToken.length);
 
     // Send MC_MATCH_LOGIN_GOOGLE to the MatchServer
     try {
