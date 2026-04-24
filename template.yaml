@@ -89,6 +89,18 @@ Resources:
           - X-Signature-Ed25519
           - X-Signature-Timestamp
 
+  RegisteredAccountsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: whiplash-gunz-accounts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: accountKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: accountKey
+          KeyType: HASH
+
   # ---------------------------------------------------------------------------
   # Discord Interactions Lambda
   # Handles Discord slash commands and forwards bounty claims to MatchServer
@@ -131,6 +143,13 @@ Resources:
           MATCHSERVER_PORT:    !Ref GameServerPort
           REGISTRATION_SECRET: !Ref RegistrationSecret
           TURNSTILE_SECRET_KEY: !Ref TurnstileSecretKey
+          REGISTERED_ACCOUNTS_TABLE_NAME: !Ref RegisteredAccountsTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt RegisteredAccountsTable.Arn
       Events:
         RegisterApi:
           Type: HttpApi
@@ -165,6 +184,13 @@ Resources:
           MATCHSERVER_PORT:    !Ref GameServerPort
           REGISTRATION_SECRET: !Ref RegistrationSecret
           GOOGLE_CLIENT_ID:    !Ref GoogleClientId
+          REGISTERED_ACCOUNTS_TABLE_NAME: !Ref RegisteredAccountsTable
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt RegisteredAccountsTable.Arn
       Events:
         RegisterGoogleApi:
           Type: HttpApi
@@ -195,3 +221,7 @@ Outputs:
   RegisterGoogleUrl:
     Description: POST /register/google endpoint for Google OAuth login/registration
     Value: !Sub 'https://${WhiplashHttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/register/google'
+
+  RegisteredAccountsTableName:
+    Description: DynamoDB table that stores successful account registrations
+    Value: !Ref RegisteredAccountsTable

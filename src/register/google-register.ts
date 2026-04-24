@@ -15,6 +15,13 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { OAuth2Client } from 'google-auth-library';
 import { loginWithGoogle } from './matchserver';
+import { buildGoogleAccountKey, getClientIp, recordRegisteredAccount } from './audit';
+
+type GoogleClaims = {
+    sub: string;
+    email: string;
+    name: string;
+};
 
 // ---------------------------------------------------------------------------
 // CORS headers
@@ -45,11 +52,7 @@ function response(statusCode: number, body: object): APIGatewayProxyResultV2 {
  * Verify a Google ID token and return the decoded claims.
  * Throws if the token is invalid or the audience does not match.
  */
-async function verifyGoogleToken(idToken: string, clientId: string): Promise<{
-    sub: string;
-    email: string;
-    name: string;
-}> {
+async function verifyGoogleToken(idToken: string, clientId: string): Promise<GoogleClaims> {
     const client = new OAuth2Client(clientId);
     const ticket = await client.verifyIdToken({
         idToken,
@@ -115,13 +118,21 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     }
 
     // Verify the Google ID token before touching the MatchServer
+    let claims: GoogleClaims | undefined;
     try {
-        await verifyGoogleToken(idToken, clientId);
+        claims = await verifyGoogleToken(idToken, clientId);
     } catch (err) {
         console.warn('Google token verification failed:', err);
         return response(401, {
             success: false,
             message: 'Invalid or expired Google ID token',
+        });
+    }
+
+    if (!claims) {
+        return response(500, {
+            success: false,
+            message: 'Server configuration error.',
         });
     }
 
@@ -133,6 +144,23 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         const result = await loginWithGoogle(host, port, idToken);
 
         if (result.success) {
+            try {
+                const accountKey = buildGoogleAccountKey(claims.sub);
+                await recordRegisteredAccount({
+                    accountKey,
+                    username: accountKey,
+                    authProvider: 'google',
+                    email: claims.email,
+                    sourceIp: getClientIp(event) ?? 'unknown',
+                    userAgent: event.headers?.['user-agent'] ?? event.headers?.['User-Agent'] ?? null,
+                    requestId: event.requestContext.requestId,
+                    route: event.requestContext.http.path,
+                    stage: event.requestContext.stage ?? null,
+                    matchserverMessage: result.message,
+                });
+            } catch (auditError) {
+                console.error('registration audit log error:', auditError);
+            }
             return response(200, {
                 success: true,
                 message: result.message,

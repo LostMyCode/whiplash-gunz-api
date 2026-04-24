@@ -12,6 +12,7 @@
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { createAccount } from './matchserver';
+import { getClientIp, recordRegisteredAccount } from './audit';
 
 // ---------------------------------------------------------------------------
 // Validation helpers
@@ -170,6 +171,22 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         const result = await createAccount(host, port, username as string, password as string, email as string, process.env.REGISTRATION_SECRET ?? '');
 
         if (result.success) {
+            try {
+                await recordRegisteredAccount({
+                    accountKey: username as string,
+                    username: username as string,
+                    authProvider: 'password',
+                    email: email as string,
+                    sourceIp: getClientIp(event) ?? 'unknown',
+                    userAgent: event.headers?.['user-agent'] ?? event.headers?.['User-Agent'] ?? null,
+                    requestId: event.requestContext.requestId,
+                    route: event.requestContext.http.path,
+                    stage: event.requestContext.stage ?? null,
+                    matchserverMessage: result.message,
+                });
+            } catch (auditError) {
+                console.error('registration audit log error:', auditError);
+            }
             return response(200, { success: true, message: result.message });
         } else {
             // The MatchServer returned a failure message (e.g. duplicate username)

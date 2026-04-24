@@ -2,6 +2,8 @@
   "name": "whiplash-gunz-api-register",
   "version": "1.0.0",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1036.0",
+    "@aws-sdk/lib-dynamodb": "^3.1036.0",
     "esbuild": "^0.28.0",
     "google-auth-library": "^10.6.2",
     "libsodium-wrappers": "^0.7.15",
