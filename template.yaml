@@ -67,6 +67,33 @@ Parameters:
       Google OAuth 2.0 client ID (from Google Cloud Console).
       Required by the POST /register/google endpoint.
 
+  # --- Ranking Publisher Lambda ---
+  DiscordBotToken:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: Discord bot token used to post ranking messages
+
+  DiscordRankingChannelId:
+    Type: String
+    Default: ''
+    Description: Discord channel ID where ranking messages are posted
+
+  GunzBackupBucket:
+    Type: String
+    Default: gunz-backups
+    Description: S3 bucket that receives MatchServer SQLite backups
+
+  GunzBackupPrefix:
+    Type: String
+    Default: gunzdb/
+    Description: S3 key prefix for GunzDB backup objects
+
+  RankingTopN:
+    Type: Number
+    Default: 10
+    Description: Number of top players to include in each ranking post
+
 Resources:
 
   # ---------------------------------------------------------------------------
@@ -210,6 +237,52 @@ Resources:
         External:
           - "@aws-sdk/*"
 
+  # ---------------------------------------------------------------------------
+  # Ranking Publisher Lambda
+  # Invoked by manually configured S3 ObjectCreated notifications.
+  # ---------------------------------------------------------------------------
+  RankingPublisherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'whiplash-gunz-ranking-publisher-${StageName}'
+      Description: Reads GunzDB SQLite backups from S3 and posts rankings to Discord
+      CodeUri: src/ranking/
+      Handler: index.handler
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          DISCORD_BOT_TOKEN: !Ref DiscordBotToken
+          DISCORD_RANKING_CHANNEL_ID: !Ref DiscordRankingChannelId
+          RANKING_BACKUP_PREFIX: !Ref GunzBackupPrefix
+          RANKING_TOP_N: !Ref RankingTopN
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub 'arn:aws:s3:::${GunzBackupBucket}/${GunzBackupPrefix}*'
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: false
+        AssetNames: "[name]"
+        EntryPoints:
+          - index.ts
+        Loader:
+          - .wasm=file
+
+  RankingPublisherS3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RankingPublisherFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:s3:::${GunzBackupBucket}'
+
 Outputs:
   DiscordInteractionsUrl:
     Description: Set this URL as the Interactions Endpoint URL in the Discord Developer Portal
@@ -226,3 +299,11 @@ Outputs:
   RegisteredAccountsTableName:
     Description: DynamoDB table that stores successful account registrations
     Value: !Ref RegisteredAccountsTable
+
+  RankingPublisherFunctionName:
+    Description: Lambda function to select when manually configuring S3 backup event notifications
+    Value: !Ref RankingPublisherFunction
+
+  RankingPublisherFunctionArn:
+    Description: Ranking publisher Lambda ARN
+    Value: !GetAtt RankingPublisherFunction.Arn

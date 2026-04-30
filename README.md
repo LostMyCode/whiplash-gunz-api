@@ -9,6 +9,7 @@ AWS Lambda functions for the Whiplash GunZ game server, managed with AWS SAM.
 | `DiscordFunction` | `POST /discord/interactions` | Discord slash command handler |
 | `RegisterFunction` | `POST /register` | Password-based account registration |
 | `RegisterGoogleFunction` | `POST /register/google` | Google OAuth login / registration |
+| `RankingPublisherFunction` | S3 event notification | Posts rankings from GunzDB backup objects |
 
 ## Requirements
 
@@ -30,6 +31,18 @@ sam deploy \
 ```
 
 This stack also creates a DynamoDB table named `whiplash-gunz-accounts` for successful account registrations.
+
+To enable ranking posts, also pass:
+
+```bash
+DiscordBotToken=<BOT_TOKEN>
+DiscordRankingChannelId=<CHANNEL_ID>
+GunzBackupBucket=gunz-backups
+GunzBackupPrefix=gunzdb/
+RankingTopN=10
+```
+
+The stack does not manage the S3 bucket notification. Configure the bucket manually to invoke `RankingPublisherFunction` for `ObjectCreated` events with prefix `gunzdb/` and suffix `.sq3.zst`.
 
 ## Adding a new Discord command
 
@@ -61,6 +74,19 @@ This stack also creates a DynamoDB table named `whiplash-gunz-accounts` for succ
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key for `/register` CAPTCHA verification |
 | `GOOGLE_CLIENT_ID` | yes (Google only) | Google OAuth 2.0 client ID |
 | `REGISTERED_ACCOUNTS_TABLE_NAME` | injected by SAM | DynamoDB table for successful account registrations |
+
+### Ranking Publisher Lambda (`RankingPublisherFunction`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `DISCORD_BOT_TOKEN` | yes | Discord bot token used for channel message posts |
+| `DISCORD_RANKING_CHANNEL_ID` | yes | Discord channel ID that receives ranking posts |
+| `RANKING_BACKUP_PREFIX` | | S3 key prefix to accept, default `gunzdb/` |
+| `RANKING_TOP_N` | | Number of players to post, default `10` |
+
+This function is intended to be invoked by manually configured S3 event notifications from `s3://gunz-backups/gunzdb/*.sq3.zst`. It downloads the compressed SQLite backup, decompresses it with the pure JavaScript `fzstd` package, reads it with `sql.js`, and posts a ranking message through the Discord REST API. It does not require or assume a `zstd` binary in the Lambda runtime.
+
+The implementation avoids native Node SQLite bindings, Lambda layers, and container images. `sql.js` ships SQLite as WebAssembly and loads the database file into memory, while `fzstd` is pure JavaScript, so the Lambda remains architecture-independent while the SAM function still runs on `arm64`.
 
 ### Registered Accounts
 
