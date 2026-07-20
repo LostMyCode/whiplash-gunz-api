@@ -1,28 +1,99 @@
+<div align="center">
+
 # Whiplash GunZ API
 
-AWS Lambda functions for the Whiplash GunZ game server, managed with AWS SAM.
+**Serverless bridge between the web, Discord, and the Whiplash GunZ MatchServer.**
 
-## Functions
+AWS SAM stack of Lambda functions that handles player account registration, Discord slash commands, and automated leaderboard publishing for [Whiplash GunZ](https://github.com/LostMyCode/whiplash-gunz) — GunZ: The Duel running in the browser via WebAssembly.
 
-| Function | Route | Description |
-|---|---|---|
-| `DiscordFunction` | `POST /discord/interactions` | Discord slash command handler |
-| `RegisterFunction` | `POST /register` | Password-based account registration |
-| `RegisterGoogleFunction` | `POST /register/google` | Google OAuth login / registration |
-| `RankingPublisherFunction` | S3 event notification | Posts rankings from GunzDB backup objects |
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![AWS SAM](https://img.shields.io/badge/AWS-SAM-orange?logo=amazonaws)
+![Node 22](https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white)
+![arm64](https://img.shields.io/badge/arch-arm64-lightgrey)
 
-## Requirements
+</div>
+
+---
+
+## What this does
+
+The GunZ **MatchServer** (the native game server from [whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz)) has no public web surface of its own. This stack puts one in front of it:
+
+- **Account registration** — a web frontend POSTs to `/register` (username + password, Turnstile-protected) or `/register/google` (Google ID token). The Lambda then speaks the GunZ **MCommand binary protocol directly over WebSocket** to the MatchServer to create the account.
+- **Discord slash commands** — Discord interactions (e.g. `/claim` for daily bounty codes) are verified and forwarded to the MatchServer's **Admin HTTP API** with a bearer token.
+- **Leaderboard publishing** — S3 backup uploads of the game database trigger a Lambda that parses the SQLite snapshot in pure JS/WASM and posts a ranking embed to a Discord channel.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Internet
+        WebUser["🌐 Registration frontend"]
+        Discord["💬 Discord"]
+    end
+
+    subgraph AWS["AWS (SAM stack)"]
+        API["HTTP API Gateway"]
+        Reg["RegisterFunction<br/>RegisterGoogleFunction"]
+        Disc["DiscordFunction"]
+        Rank["RankingPublisherFunction"]
+        DDB[("DynamoDB<br/>whiplash-gunz-accounts")]
+        S3[("S3<br/>gunzdb/*.sq3.zst")]
+    end
+
+    subgraph GameServer["MatchServer host"]
+        WS["WebSocket :6032<br/>MCommand binary protocol"]
+        Admin["Admin HTTP :6034<br/>Bearer auth"]
+    end
+
+    WebUser -->|"POST /register(/google)"| API --> Reg
+    Discord -->|"POST /discord/interactions<br/>(Ed25519-signed)"| API --> Disc
+    Reg -->|"encrypted MCommand<br/>over WebSocket"| WS
+    Reg -.->|"audit mirror"| DDB
+    Disc -->|"Bearer token"| Admin
+    S3 -->|"ObjectCreated"| Rank -->|"REST API"| Discord
+```
+
+| Function | Route / Trigger | Language | Purpose |
+|---|---|---|---|
+| `DiscordFunction` | `POST /discord/interactions` | JS (no build) | Verifies Ed25519 signature, dispatches slash commands to the Admin HTTP API |
+| `RegisterFunction` | `POST /register` | TS (esbuild) | Turnstile CAPTCHA check, then account creation over the game protocol |
+| `RegisterGoogleFunction` | `POST /register/google` | TS (esbuild) | Google ID token login / first-time auto-registration |
+| `RankingPublisherFunction` | S3 `ObjectCreated` | TS (esbuild) | zstd-decompresses + queries SQLite backups, posts leaderboards |
+
+Each function under `src/` is a **self-contained package** with its own `package.json` and `node_modules`. There is no root Node project.
+
+### The game protocol client
+
+`src/register/matchserver.ts` is a from-scratch TypeScript implementation of the GunZ client wire protocol:
+
+- 6-byte `MPacketHeader` + MCommand payload, all little-endian.
+- Transport is WebSocket (`[0x01][payload]` binary frames), matching the MatchServer's `WebSocketListener`.
+- The `MSGID_REPLYCONNECT` handshake yields server/client UIDs and a timestamp, from which a 32-byte XOR/bit-rotation cipher key is derived — **byte-for-byte identical** to the C++ `MMakeSeedKey` / `MPacketCrypter` in whiplash-gunz. If you change the key schedule or cipher on either side, you must change it on both. See the header comment in `matchserver.ts` for the full wire format.
+- Passwords are BLAKE2b-hashed (libsodium) client-side and sent as an `MPT_BLOB`.
+
+## Getting started
+
+### Prerequisites
 
 - AWS SAM CLI
 - Node.js 22+
+- A running MatchServer built from [whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz) (`./build-matchserver-ws.sh`), reachable from the Lambdas
 
-## Build & Deploy
+### Build & deploy
 
 ```bash
 sam build
-sam deploy \
-  --parameter-overrides \
-    MatchServerHost=<IP> \
+sam deploy --guided   # first time; afterwards: sam deploy
+```
+
+Required parameter overrides (all secrets are `NoEcho` SAM parameters — never commit values):
+
+```bash
+sam deploy --parameter-overrides \
+    MatchServerHost=<HOST> \
+    GameServerPort=6032 \
+    AdminServerPort=6034 \
     AdminServerSecret=<ADMIN_SECRET> \
     DiscordPublicKey=<HEX_KEY> \
     RegistrationSecret=<REG_SECRET> \
@@ -30,83 +101,91 @@ sam deploy \
     GoogleClientId=<GOOGLE_CLIENT_ID>
 ```
 
-This stack also creates a DynamoDB table named `whiplash-gunz-accounts` for successful account registrations.
+> **Note:** `GameServerPort` must be the MatchServer's **WebSocket** port (default build: `6032`). The raw TCP game port (6000) is not usable by this stack.
 
 To enable ranking posts, also pass:
 
 ```bash
-DiscordBotToken=<BOT_TOKEN>
-DiscordRankingChannelId=<CHANNEL_ID>
-GunzBackupBucket=gunz-backups
-GunzBackupPrefix=gunzdb/
+DiscordBotToken=<BOT_TOKEN> \
+DiscordRankingChannelId=<CHANNEL_ID> \
+GunzBackupBucket=<BUCKET> \
+GunzBackupPrefix=gunzdb/ \
 RankingTopN=10
 ```
 
-The stack does not manage the S3 bucket notification. Configure the bucket manually to invoke `RankingPublisherFunction` for `ObjectCreated` events with prefix `gunzdb/` and suffix `.sq3.zst`.
+The S3 bucket notification is **not** managed by this stack — configure the bucket manually to invoke `RankingPublisherFunction` for `ObjectCreated` events matching `gunzdb/*.sq3.zst`.
 
-## Adding a new Discord command
+Alternatively, `./scripts/deploy.sh` wraps the above: it reads every value from environment variables and interactively prompts for any missing secret.
 
-1. Create `src/handlers/<commandName>.js` exporting an async `handle<Name>(interaction)` function
-2. Register it in `src/handlers/index.js` under `COMMAND_HANDLERS`
-3. Register the slash command in the Discord Developer Portal
+### Registering Discord slash commands
 
-## Environment Variables
+Fill in `APPLICATION_ID` / `BOT_TOKEN` / `GUILD_ID` in `scripts/register-discord-commands.sh` **locally** (never commit real values) and run it once per command change.
 
-`POST /register` expects `username`, `password`, `email`, and `turnstileToken` in the JSON body.
+### Local development
 
-### Discord Lambda (`DiscordFunction`)
+There are no automated tests yet. Typecheck the TypeScript functions individually:
+
+```bash
+cd src/register && npm install && npx tsc --noEmit
+cd src/ranking  && npm install && npx tsc --noEmit
+```
+
+For a full end-to-end check, run a local MatchServer from whiplash-gunz and point a deployed dev stack (or `sam local start-api` with a `.env.json`) at it, then:
+
+```bash
+curl -X POST https://<api>/register \
+  -H 'content-type: application/json' \
+  -d '{"username":"test","password":"secret123","email":"t@example.com","turnstileToken":"<token>"}'
+```
+
+## Configuration reference
+
+### `DiscordFunction`
 
 | Variable | Required | Description |
 |---|---|---|
-| `DISCORD_PUBLIC_KEY` | yes | Discord Application Public Key (hex) |
+| `DISCORD_PUBLIC_KEY` | yes | Discord application public key (hex) for Ed25519 verification |
 | `MATCHSERVER_HOST` | yes | MatchServer IP / hostname |
-| `MATCHSERVER_PORT` | | Admin HTTP port (default: 6034) |
-| `MATCHSERVER_SECRET` | yes | Bearer token for Admin API |
-| `MATCHSERVER_USE_HTTPS` | | `true` to use HTTPS (default: false) |
+| `MATCHSERVER_PORT` | | Admin HTTP port (default `6034`) |
+| `MATCHSERVER_SECRET` | yes | Bearer token for the Admin HTTP API |
+| `MATCHSERVER_USE_HTTPS` | | `true` to use HTTPS (default `false`) |
 
-### Register Lambdas (`RegisterFunction`, `RegisterGoogleFunction`)
+### `RegisterFunction` / `RegisterGoogleFunction`
 
 | Variable | Required | Description |
 |---|---|---|
 | `MATCHSERVER_HOST` | yes | MatchServer IP / hostname |
-| `MATCHSERVER_PORT` | | Game TCP port (default: 6000) |
-| `REGISTRATION_SECRET` | | Secret token sent with account creation |
-| `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key for `/register` CAPTCHA verification |
-| `GOOGLE_CLIENT_ID` | yes (Google only) | Google OAuth 2.0 client ID |
-| `REGISTERED_ACCOUNTS_TABLE_NAME` | injected by SAM | DynamoDB table for successful account registrations |
+| `MATCHSERVER_PORT` | yes | MatchServer **WebSocket** port (`6032` in the default build) |
+| `REGISTRATION_SECRET` | | Shared secret sent with account creation; must equal the server's `REGISTRATION_SECRET` |
+| `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret (`/register` only) |
+| `GOOGLE_CLIENT_ID` | Google only | Google OAuth 2.0 client ID |
+| `REGISTERED_ACCOUNTS_TABLE_NAME` | injected | DynamoDB audit table name |
 
-### Ranking Publisher Lambda (`RankingPublisherFunction`)
+### `RankingPublisherFunction`
 
 | Variable | Required | Description |
 |---|---|---|
-| `DISCORD_BOT_TOKEN` | yes | Discord bot token used for channel message posts |
-| `DISCORD_RANKING_CHANNEL_ID` | yes | Discord channel ID that receives ranking posts |
-| `RANKING_BACKUP_PREFIX` | | S3 key prefix to accept, default `gunzdb/` |
-| `RANKING_TOP_N` | | Number of players to post, default `10` |
+| `DISCORD_BOT_TOKEN` | yes | Bot token used for channel posts |
+| `DISCORD_RANKING_CHANNEL_ID` | yes | Target channel ID |
+| `RANKING_BACKUP_PREFIX` | | Accepted S3 key prefix (default `gunzdb/`) |
+| `RANKING_TOP_N` | | Number of players to post (default `10`) |
 
-This function is intended to be invoked by manually configured S3 event notifications from `s3://gunz-backups/gunzdb/*.sq3.zst`. It downloads the compressed SQLite backup, decompresses it with the pure JavaScript `fzstd` package, reads it with `sql.js`, and posts a ranking message through the Discord REST API. It does not require or assume a `zstd` binary in the Lambda runtime.
+The ranking function deliberately avoids native SQLite/zstd bindings, Lambda layers, and container images (`sql.js` + `fzstd` are pure JS/WASM) so it stays portable on `arm64` — please don't reintroduce native binary dependencies.
 
-The implementation avoids native Node SQLite bindings, Lambda layers, and container images. `sql.js` ships SQLite as WebAssembly and loads the database file into memory, while `fzstd` is pure JavaScript, so the Lambda remains architecture-independent while the SAM function still runs on `arm64`.
+## Registered accounts mirror
 
-### Registered Accounts
+Successful registrations are mirrored best-effort into DynamoDB (`whiplash-gunz-accounts`), keyed by `accountKey` (the MatchServer `UserID`; `g_<hash(sub)>` for Google accounts) with a conditional put so re-registration is a no-op. Fields: `username`, `authProvider`, `email`, `sourceIp`, `userAgent`, `route`, `stage`, `requestId`, `createdAt`, `updatedAt`, `matchserverMessage`. Only the two registration Lambdas have `dynamodb:PutItem`.
 
-`POST /register` and successful `POST /register/google` responses write a best-effort DynamoDB record after the MatchServer accepts the account. If the key already exists, the write is treated as a no-op.
+## Related projects
 
-Record fields:
+- **[whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz)** — the WASM client and the native MatchServer this stack talks to. The MCommand protocol, key schedule, Admin HTTP routes, and `REGISTRATION_SECRET` are shared contracts between the two repositories; cross-cutting changes must land in both.
 
-| Field | Description |
-|---|---|
-| `accountKey` | Partition key. Matches the MatchServer `UserID` value |
-| `username` | Registered username or generated Google account key |
-| `authProvider` | `password` or `google` |
-| `email` | Registered e-mail address |
-| `sourceIp` | Client IP from API Gateway HTTP API `sourceIp` or forwarded headers |
-| `userAgent` | Browser or client user agent if available |
-| `route` | Request path, such as `/register` or `/register/google` |
-| `stage` | API Gateway stage name |
-| `requestId` | API Gateway request id |
-| `createdAt` | ISO-8601 UTC timestamp of the successful registration |
-| `updatedAt` | Last time the mirror record was written |
-| `matchserverMessage` | Registration success message returned by MatchServer |
+## Security
 
-The table is a simple per-account mirror keyed by the MatchServer user ID. For Google accounts, `accountKey` is the server-generated `g_<hash(sub)>` value, so the mirror stays aligned with the server's own identity model. SAM injects `REGISTERED_ACCOUNTS_TABLE_NAME` into both registration Lambdas. Only those Lambdas get `dynamodb:PutItem` permission.
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately. Please **never** open a public issue for a security problem, and never include tokens or secrets in issues or logs.
+
+## License & disclaimer
+
+Released under the [MIT License](LICENSE).
+
+This project is an independent community effort and is **not affiliated with or endorsed by** MAIET Entertainment, ijji, or any rights holder of GunZ: The Duel. It contains no proprietary game assets; it only provides account/community tooling for a server you host yourself. Please respect the licenses and attribution of the upstream GunZ source lineage.
