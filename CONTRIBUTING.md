@@ -31,7 +31,7 @@ sam build                        # builds all four functions
 
 `src/index.js` (Discord) is plain JavaScript with no build step — keep it dependency-free.
 
-To exercise the registration path end-to-end you need a MatchServer built from [whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz) listening on its WebSocket port (6032 by default).
+To exercise the registration path end-to-end you need a MatchServer built from [whiplash-gunz](https://codeberg.org/LostMyCode/whiplash-gunz) listening on its WebSocket port (6032 by default).
 
 ## Pull requests
 

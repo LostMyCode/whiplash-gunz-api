@@ -78,7 +78,7 @@ Each function under `src/` is a **self-contained package** with its own `package
 
 - AWS SAM CLI
 - Node.js 22+
-- A running MatchServer built from [whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz) (`./build-matchserver-ws.sh`), reachable from the Lambdas
+- A running MatchServer built from [whiplash-gunz](https://codeberg.org/LostMyCode/whiplash-gunz) (`./build-matchserver-ws.sh`), reachable from the Lambdas
 
 ### Build & deploy
 
@@ -178,7 +178,7 @@ Successful registrations are mirrored best-effort into DynamoDB (`whiplash-gunz-
 
 ## Related projects
 
-- **[whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz)** — the WASM client and the native MatchServer this stack talks to. The MCommand protocol, key schedule, Admin HTTP routes, and `REGISTRATION_SECRET` are shared contracts between the two repositories; cross-cutting changes must land in both.
+- **[whiplash-gunz](https://github.com/LostMyCode/whiplash-gunz)** — the WASM client and the native MatchServer this stack talks to. The MCommand protocol, key schedule, Admin HTTP routes, and `REGISTRATION_SECRET` are shared contracts between the two repositories; cross-cutting changes must land in both. The GitHub repo is a landing page; full source and history are hosted on [Codeberg](https://codeberg.org/LostMyCode/whiplash-gunz).
 
 ## Security
 
