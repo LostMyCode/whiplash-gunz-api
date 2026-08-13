@@ -3,7 +3,7 @@
  *
  * Encodes and decodes GunZ MCommand binary packets, performs the
  * REPLYCONNECT handshake (which establishes encryption keys), and
- * sends MC_MATCH_REQUEST_CREATE_ACCOUNT over a plain TCP connection.
+ * sends MC_MATCH_REQUEST_CREATE_ACCOUNT over a WebSocket connection.
  *
  * Protocol overview (all multi-byte integers are little-endian):
  *
@@ -37,8 +37,8 @@
  *     each field).
  *
  *   Handshake:
- *     Server sends MSGID_REPLYCONNECT (28 bytes total) immediately after
- *     TCP accept, containing serverUID (High+Low u32s), clientUID (High+Low
+ *     Server sends MSGID_REPLYCONNECT (26 bytes total) immediately after
+ *     connecting, containing serverUID (High+Low u32s), clientUID (High+Low
  *     u32s), and a u32 timestamp.  The client uses these to derive the
  *     encryption key before sending any MSGID_COMMAND packet.
  */
@@ -214,21 +214,24 @@ function decrypt(buf: Buffer, key: Buffer, keyIndex = 0): number {
  * Derives the 32-byte MPacketCrypterKey from server UID, client UID,
  * and the timestamp sent in MSGID_REPLYCONNECT.
  *
- * Layout (matches C++ MMakeSeedKey in MMatchUtil.cpp exactly):
+ * Layout (matches C++ MMakeSeedKey in MMatchUtil.cpp exactly — see the
+ * "// Fix: Include High part" comment there):
  *
- *   memcpy(p,                      &nTimeStamp,    4)  → bytes  0..3
- *   memcpy(p + 4,                  &uidServer.Low, 4)  → bytes  4..7   (only Low!)
- *   memcpy(p + sizeof(MUID) = p+8, &uidClient,     8)  → bytes  8..11 (clientHigh)
- *                                                         bytes 12..15 (clientLow)
+ *   memcpy(p,     &nTimeStamp,    4)  → bytes  0..3
+ *   memcpy(p + 4, &uidServer.Low, 4)  → bytes  4..7
+ *   memcpy(p + 8, &uidServer.High,4)  → bytes  8..11
+ *   memcpy(p + 12,&uidClient.Low, 4)  → bytes 12..15
  *   XOR bytes 0..15 with constant XOR[16]
- *   Fixed IV bytes 16..31
+ *   Fixed IV bytes 16..31 (uidClient.High is overwritten by the IV, unused)
  *
- * Note: serverUID.High is NOT written to the key — only serverUID.Low is used.
+ * SHARED WIRE CONTRACT: this must byte-for-byte match MMakeSeedKey in
+ * whiplash-gunz (src/CSCommon/Source/MMatchUtil.cpp). Don't change one side
+ * without the other and a coordinated redeploy.
  */
 function makeSeedKey(
-    serverHigh: number,   // serverUID.High — NOT used in key derivation (kept for signature compat)
+    serverHigh: number,   // serverUID.High — written at offset 8
     serverLow: number,    // serverUID.Low  — written at offset 4
-    clientHigh: number,   // clientUID.High — written at offset 8
+    clientHigh: number,   // clientUID.High — NOT used (overwritten by fixed IV)
     clientLow: number,    // clientUID.Low  — written at offset 12
     timestamp: number,
 ): Buffer {
@@ -237,12 +240,12 @@ function makeSeedKey(
     const key = Buffer.alloc(KEY_LEN, 0);
 
     // Bytes 0..3:   timestamp (u32 LE)
-    // Bytes 4..7:   serverUID.Low only (C++: memcpy(p+4, &uidServer.Low, 4))
-    // Bytes 8..11:  clientUID.High (C++: memcpy(p+8, &uidClient, 8) — High is first)
-    // Bytes 12..15: clientUID.Low
+    // Bytes 4..7:   serverUID.Low  (C++: memcpy(p+4, &uidServer.Low, 4))
+    // Bytes 8..11:  serverUID.High (C++: memcpy(p+8, &uidServer.High, 4))
+    // Bytes 12..15: clientUID.Low  (C++: memcpy(p+12, &uidClient.Low, 4))
     key.writeUInt32LE(timestamp,  0);
     key.writeUInt32LE(serverLow,  4);
-    key.writeUInt32LE(clientHigh, 8);  // was wrong (serverHigh); correct is clientHigh
+    key.writeUInt32LE(serverHigh, 8);
     key.writeUInt32LE(clientLow,  12);
 
     // XOR the first 16 bytes with the constant XOR table
@@ -652,7 +655,7 @@ export async function createAccount(
         let recvBuf = Buffer.alloc(0);
         let cryptoKey: Buffer | null = null; // derived after REPLYCONNECT
 
-        conn.onData((chunk: Buffer) => {
+        const onChunk = (chunk: Buffer) => {
             recvBuf = Buffer.concat([recvBuf, chunk]);
 
             if (phase === 0) {
@@ -694,8 +697,10 @@ export async function createAccount(
                 phase = 1;
 
                 // If there is already buffered data from phase 1, process it now
+                // instead of waiting for the next WS message to arrive.
                 if (recvBuf.length > 0) {
-                    conn.onData(Buffer.alloc(0) as unknown as never); // re-trigger inline
+                    onChunk(Buffer.alloc(0));
+                    return;
                 }
 
             } else if (phase === 1) {
@@ -739,7 +744,9 @@ export async function createAccount(
                 const success = parsed.message === 'Account created!';
                 settle(() => resolve({ success, message: parsed.message }));
             }
-        });
+        };
+
+        conn.onData(onChunk);
 
         conn.onClose(() => {
             // If we close before getting a response, reject
@@ -778,18 +785,6 @@ export async function loginWithGoogle(
     port: number,
     idToken: string,
 ): Promise<LoginGoogleResult> {
-    // DEBUG: log idToken value and length at entry
-    console.log('[loginWithGoogle] idToken length:', idToken.length);
-    console.log('[loginWithGoogle] idToken (first 80 chars):', idToken.substring(0, 80));
-    console.log('[loginWithGoogle] idToken (last 20 chars):', idToken.substring(idToken.length - 20));
-
-    // DEBUG: log the raw encoded IdToken parameter bytes (before encryption)
-    const debugIdTokenParam = encodeStr(idToken);
-    console.log('[loginWithGoogle] encodeStr(idToken) hex (first 40 bytes):',
-        debugIdTokenParam.subarray(0, 40).toString('hex'));
-    console.log('[loginWithGoogle] nValueSize field:', debugIdTokenParam.readUInt16LE(0),
-        '(expected:', idToken.length + 2, ')');
-
     return new Promise((resolve, reject) => {
         const TIMEOUT_MS = 15_000;
 
@@ -819,7 +814,7 @@ export async function loginWithGoogle(
         let recvBuf = Buffer.alloc(0);
         let cryptoKey: Buffer | null = null;
 
-        conn.onData((chunk: Buffer) => {
+        const onChunk = (chunk: Buffer) => {
             recvBuf = Buffer.concat([recvBuf, chunk]);
 
             if (phase === 0) {
@@ -842,26 +837,16 @@ export async function loginWithGoogle(
 
                 // Build and send MC_MATCH_LOGIN_GOOGLE
                 const cmdBuf = buildLoginGoogleCommand(idToken);
-
-                // DEBUG: log raw command bytes (pre-encryption)
-                console.log('[loginWithGoogle] cmdBuf totalSize:', cmdBuf.readUInt16LE(0));
-                console.log('[loginWithGoogle] cmdBuf commandID:', cmdBuf.readUInt16LE(2), '(expected: 8022)');
-                console.log('[loginWithGoogle] cmdBuf IdToken param hex (bytes 5..44):',
-                    cmdBuf.subarray(5, 45).toString('hex'));
-                console.log('[loginWithGoogle] cmdBuf full length:', cmdBuf.length);
-
                 const packet = wrapInPacket(cmdBuf, MSGID_COMMAND, cryptoKey);
-
-                // DEBUG: log the encrypted packet bytes that will be sent
-                console.log('[loginWithGoogle] encrypted packet length:', packet.length);
-                console.log('[loginWithGoogle] encrypted packet hex (first 60 bytes):',
-                    packet.subarray(0, 60).toString('hex'));
 
                 conn.send(packet);
                 phase = 1;
 
+                // If there is already buffered data from phase 1, process it now
+                // instead of waiting for the next WS message to arrive.
                 if (recvBuf.length > 0) {
-                    // data already buffered, process inline on next tick
+                    onChunk(Buffer.alloc(0));
+                    return;
                 }
 
             } else if (phase === 1) {
@@ -921,7 +906,9 @@ export async function loginWithGoogle(
                     expiresAt: parsed.expiresAt,
                 }));
             }
-        });
+        };
+
+        conn.onData(onChunk);
 
         conn.onClose(() => {
             if (phase === 1) {
